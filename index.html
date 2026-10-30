@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Garden Portfolio</title>
+    #fast{position:fixed;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));z-index:10;text-align:center;
+    font-size:.95rem;letter-spacing:.14em;text-transform:uppercase;text-shadow:0 1px 8px #000;pointer-events:none;opacity:0;transition:opacity .6s}
+  #fast.show{opacity:.9}
 <style>
   :root{--ink:#fff}
   *{box-sizing:border-box;margin:0}
@@ -50,6 +53,7 @@
 <div id="track"></div>
 <div id="stage"><canvas id="c"></canvas></div>
 <div id="ver">v5</div>
+  <div id="fast">Scroll fast ↓</div>
 <div id="hint">Scroll to explore • Move mouse to stir the wind</div>
 <a class="hotspot" id="hs0" target="_blank" rel="noopener"><span class="rings"><i></i><i></i><i></i></span><span class="label"></span></a>
 <a class="hotspot" id="hs1" target="_blank" rel="noopener"><span class="rings"><i></i><i></i><i></i></span><span class="label"></span></a>
@@ -165,6 +169,7 @@ function load(k){
     im.src = FRAME_PATH(n);
   });
 }
+  const fastEl = document.getElementById("fast");   // phone-only, temporary tip
 const lineEl = document.getElementById("line");
 let li = 0;
 const lineTimer = setInterval(()=>{ if(window.__err) return; lineEl.style.opacity = 0;
@@ -179,6 +184,7 @@ const lineTimer = setInterval(()=>{ if(window.__err) return; lineEl.style.opacit
     if(ready) return; ready = true; clearInterval(lineTimer);
     pct.textContent = "Loading Garden... 100%"; bar.style.width = "100%";
     app.render(); document.getElementById("loader").classList.add("done");
+       if(MOBILE){ fastEl.classList.add("show"); setTimeout(()=>fastEl.classList.remove("show"),7000); }
   }
   const q = [...Array(LOADED-1).keys()].map(i=>i+1);   // in journey order, so the start arrives first
   async function worker(){
