@@ -37,12 +37,19 @@
   #contact .calls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
   #contact .calls a,#contact button{color:#fff;text-decoration:none;font:inherit;font-size:.85rem;letter-spacing:.08em;padding:9px 16px;
     border-radius:999px;background:rgba(10,16,10,.5);border:1px solid rgba(255,255,255,.3);cursor:pointer}
+  .ld{display:flex;flex-direction:column;align-items:center;gap:18px;padding:0 24px;text-align:center}
+  #line{font-style:italic;font-size:1.25rem;letter-spacing:.02em;text-transform:none;min-height:1.6em;transition:opacity .5s}
+  .bar{width:min(240px,60vw);height:2px;background:rgba(255,255,255,.18);border-radius:2px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:#fff;transition:width .3s}
+  #pct{font-size:.72rem;opacity:.6}
+  #ver{position:fixed;left:10px;bottom:6px;z-index:40;font:10px/1 sans-serif;opacity:.35;pointer-events:none}
 </style>
 </head>
 <body>
-<div id="loader"><span id="pct">Loading Garden... 0%</span></div>
+<div id="loader"><div class="ld"><div id="line">A little cat is waking up in the garden…</div><div class="bar"><i id="bar"></i></div><span id="pct">Loading Garden... 0%</span></div></div>
 <div id="track"></div>
 <div id="stage"><canvas id="c"></canvas></div>
+<div id="ver">v4</div>
 <div id="hint">Scroll to explore • Move mouse to stir the wind</div>
 <a class="hotspot" id="hs0" target="_blank" rel="noopener"><span class="rings"><i></i><i></i><i></i></span><span class="label"></span></a>
 <a class="hotspot" id="hs1" target="_blank" rel="noopener"><span class="rings"><i></i><i></i><i></i></span><span class="label"></span></a>
@@ -50,13 +57,22 @@
 
 <div id="contact" aria-hidden="true"><div class="box"><img id="cimg" alt="Contact card"><div class="calls" id="calls"></div><button id="cclose">Close</button></div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+<script>addEventListener("error",function(e){window.__err=1;var l=document.getElementById("line");if(l){l.style.opacity=1;l.textContent="Oops: "+(e.message||"a file failed to load");}},true);</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js" onerror="window.__err=0;document.write('<script src=&quot;https://cdn.jsdelivr.net/npm/pixi.js@7.4.2/dist/pixi.min.js&quot;><\/script>'.replace(/&quot;/g,String.fromCharCode(34)))"></script>
 <script>
 /* ===== CONFIG ===== */
 const TOTAL_FRAMES = 674;            // frames/frame_001.jpg … frame_674.jpg
-const FRAME_PATH = n => `frames/frame_${String(n).padStart(3,"0")}.jpg`;
+// frames live in batch_1 … batch_8 folders (85 frames each), matching how they were uploaded
+const FRAME_PATH = n => `batch_${Math.floor((n-1)/85)+1}/frames/frame_${String(n).padStart(3,"0")}.jpg`;
 const LERP = 0.1;
-const CONTACT_IMG = "contact.jpg";
+// Phones can't hold 674 full-size decoded frames, so they load every 5th frame, shrunk
+const MOBILE = matchMedia("(pointer:coarse)").matches || Math.min(innerWidth,innerHeight) < 700;
+const STRIDE = MOBILE ? 5 : 1;
+const LOADED = Math.ceil(TOTAL_FRAMES/STRIDE);
+const FW = MOBILE ? 640 : 1280, FH = MOBILE ? 360 : 720;
+const REVEAL = Math.min(LOADED, MOBILE ? 24 : 60);   // frames needed before the page opens; the rest keep loading behind it
+const LINES = ["A little cat is waking up in the garden…","Brushing the morning dew off every leaf…","Teaching the breeze where to blow…","Almost there — the path is ready to be walked."];
+const CONTACT_IMG = "batch_1/contact.jpg";
 const PHONES = ["+918980989667","+9779703310653"];
 // modal:true = opens the contact card (CONTACT_IMG) instead of a link. start/end = scroll depth 0–1. top/left = % of viewport.
 const HOTSPOTS = [
@@ -68,7 +84,7 @@ const HOTSPOTS = [
 /* ===== SETUP ===== */
 const canvas = document.getElementById("c");
 const hint = document.getElementById("hint");
-const images = new Array(TOTAL_FRAMES);
+const images = new Array(LOADED);
 let target = 0, current = 0, ready = false;
 
 HOTSPOTS.forEach(h=>{
@@ -81,9 +97,13 @@ HOTSPOTS.forEach(h=>{
 
 /* ===== PIXI (wind displacement) ===== */
 const app = new PIXI.Application({view:canvas, resizeTo:window, backgroundColor:0x0d140d,
-  antialias:false, resolution:Math.min(devicePixelRatio||1,2), autoDensity:true});
+  antialias:false, resolution:Math.min(devicePixelRatio||1, MOBILE?1.5:2), autoDensity:true});
 app.ticker.stop();                         // we drive rendering from our own rAF loop
-const sprite = new PIXI.Sprite();
+const fc = document.createElement("canvas"); fc.width = FW; fc.height = FH;
+const fx = fc.getContext("2d");
+const frameTex = PIXI.Texture.from(fc);      // one reusable texture, no per-frame GPU leak
+const sprite = new PIXI.Sprite(frameTex);
+function paint(img){ fx.drawImage(img,0,0,FW,FH); frameTex.baseTexture.update(); }
 app.stage.addChild(sprite);
 
 // Procedural noise map for the displacement filter
@@ -113,39 +133,61 @@ addEventListener("mousemove", e=>{
   wind.mx=e.clientX; wind.my=e.clientY;
 });
 
+/* touch = wind on phones too */
+addEventListener("touchmove",e=>{const t=e.touches[0]; if(!t) return;
+  if(wind.px!==null){wind.vx+=(t.clientX-wind.px)*.35; wind.vy+=(t.clientY-wind.py)*.35;
+    wind.energyT=Math.min(1,wind.energyT+Math.hypot(t.clientX-wind.px,t.clientY-wind.py)/180);}
+  wind.px=t.clientX; wind.py=t.clientY; wind.mx=t.clientX; wind.my=t.clientY;},{passive:true});
+addEventListener("touchend",()=>{wind.px=null;});
+
 /* ===== LAYOUT: cover-fit frame (no stretching on any aspect ratio) ===== */
 function fit(){
-  const img = images[Math.round(current)] || images[0];
-  if(!img) return;
-  const sw=app.screen.width, sh=app.screen.height, s=Math.max(sw/img.width, sh/img.height);
-  sprite.width = img.width*s; sprite.height = img.height*s;
+  const sw=app.screen.width, sh=app.screen.height, s=Math.max(sw/FW, sh/FH);
+  sprite.width = FW*s; sprite.height = FH*s;
   sprite.position.set((sw-sprite.width)/2,(sh-sprite.height)/2);
 }
 addEventListener("resize", ()=>setTimeout(fit,50));
 
 /* ===== PRELOADER ===== */
-function load(i){
+async function shrink(im){
+  if(!MOBILE) return im;
+  const c = document.createElement("canvas"); c.width = FW; c.height = FH;   // small canvas keeps phone memory low
+  c.getContext("2d").drawImage(im,0,0,FW,FH);
+  return c;
+}
+function load(k){
   return new Promise(res=>{
+    const n = k===LOADED-1 ? TOTAL_FRAMES : k*STRIDE+1;
     const im = new Image(); im.decoding="async";
-    im.onload = ()=>{ images[i]=im; res(); };
-    im.onerror = ()=>{ images[i]=images[i-1]||null; res(); };
-    im.src = FRAME_PATH(i+1);
+    im.onload = async ()=>{ images[k]=await shrink(im); res(); };
+    im.onerror = ()=>{ images[k]=images[k-1]||null; res(); };
+    im.src = FRAME_PATH(n);
   });
 }
+const lineEl = document.getElementById("line");
+let li = 0;
+const lineTimer = setInterval(()=>{ if(window.__err) return; lineEl.style.opacity = 0;
+  setTimeout(()=>{ li=(li+1)%LINES.length; lineEl.textContent=LINES[li]; lineEl.style.opacity=1; },500); },2600);
+
 (async function preload(){
-  // Frame 1 first so the painting is ready to show the instant the loader lifts
-  await load(0);
-  sprite.texture = PIXI.Texture.from(images[0]); fit(); app.render();
-  let done = 1; const pct = document.getElementById("pct");
-  const q = [...Array(TOTAL_FRAMES-1).keys()].map(i=>i+1);
+  await load(0);                              // frame 1 first: the painting is ready the moment the loader lifts
+  paint(images[0]); fit(); app.render();
+  let done = 1;
+  const pct = document.getElementById("pct"), bar = document.getElementById("bar");
+  function reveal(){
+    if(ready) return; ready = true; clearInterval(lineTimer);
+    pct.textContent = "Loading Garden... 100%"; bar.style.width = "100%";
+    app.render(); document.getElementById("loader").classList.add("done");
+  }
+  const q = [...Array(LOADED-1).keys()].map(i=>i+1);   // in journey order, so the start arrives first
   async function worker(){
     while(q.length){ await load(q.shift()); done++;
-      pct.textContent = `Loading Garden... ${Math.floor(done/TOTAL_FRAMES*100)}%`; }
+      if(!ready){ const p = Math.min(100, Math.floor(done/REVEAL*100));
+        pct.textContent = `Loading Garden... ${p}%`; bar.style.width = p+"%";
+        if(done>=REVEAL) reveal(); } }
   }
-  await Promise.all(Array.from({length:6},worker));
-  pct.textContent = "Loading Garden... 100%";
-  ready = true; app.render();
-  document.getElementById("loader").classList.add("done");
+  await Promise.all(Array.from({length: MOBILE?6:10}, worker));
+  reveal();
 })();
 
 /* ===== RENDER LOOP ===== */
@@ -155,15 +197,20 @@ function tick(){
   if(!ready) return;
   const max = document.documentElement.scrollHeight - innerHeight;
   const p = max>0 ? Math.min(1, Math.max(0, scrollY/max)) : 0;
-  target = p*(TOTAL_FRAMES-1);
+  target = p*(LOADED-1);
   current += (target-current)*LERP;
   if(Math.abs(target-current)<.001) current = target;
 
-  const idx = Math.round(current);
-  if(idx!==shown && images[idx]){
-    shown = idx;
-    sprite.texture = PIXI.Texture.from(images[idx]);
-    fit();
+  let a = MOBILE ? Math.floor(current) : Math.round(current);
+  while(a>0 && !images[a]) a--;             // frames still arriving: show the nearest loaded one
+  const b = Math.min(LOADED-1, Math.floor(current)+1);
+  const f = (MOBILE && images[b] && b!==a) ? Math.round((current-Math.floor(current))*8)/8 : 0;
+  const key = a+":"+f;
+  if(key!==shown && images[a]){
+    shown = key;
+    fx.globalAlpha = 1; fx.drawImage(images[a],0,0,FW,FH);
+    if(f>0){ fx.globalAlpha = f; fx.drawImage(images[b],0,0,FW,FH); fx.globalAlpha = 1; }
+    frameTex.baseTexture.update();
   }
 
   // wind spring: velocity eases back to rest, displacement settles to 0
